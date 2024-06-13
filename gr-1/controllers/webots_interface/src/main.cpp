@@ -11,11 +11,11 @@
 #include <time.h>
 #include <unistd.h>
 #include <vector>
-// #define IMU_SENSOR
-#define JOYSTICK
+
+// #define JOYSTICK
 // #define DATALOG_MAIN
 #define WEBOTS
-// #define GRPC_SONNY
+#define GRPC_SONNY
 #define LITE_WHOLE
 
 #include "../../SonnyRobotController/include/KalmanFilter.h"
@@ -39,19 +39,19 @@
 // #include "../../MotorList/include/MotorList.h"
 // #include "../../vnIMU/include/vnIMU.h"
 #ifdef JOYSTICK
-    #include "../../joystick/include/joystick.h"
+#include "../../joystick/include/joystick.h"
 #endif
 
 #ifdef ARMUDP
-    #include "../../Arm_udp/include/rac.h"
+#include "../../Arm_udp/include/rac.h"
 #endif
 
 #ifdef GRPC_SONNY
-    #include "../../GRPC_Server/GRPC_Sonny/include/grpc_server.h"
+#include "../../GRPC_Server/GRPC_Sonny/include/grpc_server.h"
 #endif
 
 #ifdef LITE_WHOLE
-    #include "../../HeadControl/include/sonniehead.hpp"
+#include "../../HeadControl/include/sonniehead.hpp"
 #endif
 
 #include "../include/webotsInterface.h"
@@ -70,10 +70,18 @@
 using namespace broccoli::core;
 
 #ifndef PI
-    #define PI 3.141592654
+#define PI 3.141592654
 #endif // PI
 
 void readabsoluteencoder(QString path, Eigen::VectorXd &initpos);
+// 定义结构体
+#define armNum 14
+struct ModeData {
+    std::array<double, armNum> new_position, new_velocity, new_accelebration;
+    Trajectory<armNum> trajectory;
+    double duration;
+};
+
 int main(int argc, char **argv) {
     // double dt = timeStep;
     double dt = 0.0025;
@@ -155,39 +163,36 @@ int main(int argc, char **argv) {
 #ifdef SONNIE_HEAD
     int motorNum = 18;
 #else
-    #ifdef LITE_WHOLE
-        int motorNum = 32;
-        #define armNum 14
-        // int armNum = 14;
-        int armLeftNum = 7;
-        int armRightNum = 7;
-        int matain_0 = 0;
-        int matain_1 = 0;
-        int matain_2 = 0;
-        int matain_3 = 0;
-        int matain_5 = 0;
-    #else
-        int motorNum = 15;
-    #endif
+#ifdef LITE_WHOLE
+    int motorNum = 32;
+
+    // int armNum = 14;
+    int armLeftNum = 7;
+    int armRightNum = 7;
+    std::vector<int> matain_motion(100,0);
+
+#else
+    int motorNum = 15;
+#endif
 #endif
 
 // Initialize Webots
 #ifdef WEBOTS
-    std::cout << "sssssssss" << endl;
+    // std::cout << "sssssssss" << endl;
     WebotsRobot Sonny_Sim;
-    std::cout << "fffffffff" << endl;
+    // std::cout << "fffffffff" << endl;
     Sonny_Sim.initWebots();
-    std::cout << "fffffffff" << endl;
+    // std::cout << "fffffffff" << endl;
     webotState robotStateSim;
-    std::cout << "gggggggg" << endl;
-
+    // std::cout << "gggggggg" << endl;
+ 
     Eigen::VectorXd standPosCmd = Eigen::VectorXd::Zero(motorNum);
     Eigen::VectorXd jointTorCmd = Eigen::VectorXd::Zero(motorNum);
     Eigen::VectorXd jointP = Eigen::VectorXd::Zero(motorNum);
     Eigen::VectorXd jointD = Eigen::VectorXd::Zero(motorNum);
     double simTime = 0;
     double myInf = 100000;
-    std::cout << "aaaaaaaaaaaaaaaaa" << endl;
+    // std::cout << "aaaaaaaaaaaaaaaaa" << endl;
 #endif
 
     Time start_time;
@@ -243,6 +248,7 @@ int main(int argc, char **argv) {
     MotorList motorlist;
     motorlist.init(motorNum, dt, absolute_pos, ip, motorlistpath);
     motorlist.settolerance_count(3);
+    std::cout << "absolute_pos: " << absolute_pos.transpose() << std::endl;
 #endif
     //
     Eigen::VectorXd qEstDeg = Eigen::VectorXd::Zero(motorNum);
@@ -277,32 +283,17 @@ int main(int argc, char **argv) {
 #endif
 
 #ifdef LITE_WHOLE
+    std::cout << "asd asd asd" << endl;
     left_arm left_arm;
+    std::cout << "ccccccc" << endl;
     right_arm right_arm;
+    std::cout << "read arm success" << endl;
     int zero_over = 0;
 
     // planning required
     double unit_time = 0.0025;
-    // mode 为 0 时
-    std::array<double, armNum> new_position_0, new_velocity_0, new_accelebration_0;
-    Trajectory<armNum> trajectory_0;
-    double duration_0;
-    // mode 为 1 时
-    std::array<double, armNum> new_position_1, new_velocity_1, new_accelebration_1;
-    Trajectory<armNum> trajectory_1;
-    double duration_1;
-    // mode 为 2 时
-    std::array<double, armNum> new_position_2, new_velocity_2, new_accelebration_2;
-    Trajectory<armNum> trajectory_2;
-    double duration_2;
-    // mode 为 3 时
-    std::array<double, armNum> new_position_3, new_velocity_3, new_accelebration_3;
-    Trajectory<armNum> trajectory_3;
-    double duration_3;
-    // mode 为 5 时
-    std::array<double, armNum> new_position_5, new_velocity_5, new_accelebration_5;
-    Trajectory<armNum> trajectory_5;
-    double duration_5;
+    std::vector<ModeData> modes(101);
+
 #endif
     // init pos
     bool flag_start = true;
@@ -317,6 +308,7 @@ int main(int argc, char **argv) {
     // double Ttotal = 60+PTPtime;
     // int simTotalNum = Ttotal/timeStep;
     // int simTotalNum = 20000;
+    std::cout << "simTotalNum: " << simTotalNum << std::endl;
     //
     int motionStartCnt = 75;     // min >= 75*0.004
     int cartMotionCycleCnt = 75; // min >= 75*0.004
@@ -352,7 +344,9 @@ int main(int argc, char **argv) {
 #ifdef WEBOTS
 #else
     int aaaa;
+    std::cout << "start?" << std::endl;
     std::cin >> aaaa;
+    std::cout << "start!" << std::endl;
 #endif
     // #ifdef GRPC_SONNY
     // grpc_sonny_server grpc_server;
@@ -463,6 +457,7 @@ int main(int argc, char **argv) {
 
 #ifdef WEBOTS
             data->imu_sensor.block(0, 0, 9, 1) = robotStateSim.imu9DAct;
+            data->q_imu = robotStateSim.imu9DAct;
 #endif
 
 #ifdef JOYSTICK
@@ -513,17 +508,18 @@ int main(int argc, char **argv) {
                 gait.setrollpitch(grpc_server.get_stand_roll_direction_position(),
                                   grpc_server.get_stand_pitch_direction_position(),
                                   grpc_server.get_stand_yaw_direction_position());
-    #ifdef LITE_WHOLE
-                    q_head_cmd(0) = grpc_server.get_stand_head_yaw_direction_position();
-                    q_head_cmd(1) = grpc_server.get_stand_head_roll_direction_position();
-                    q_head_cmd(2) = grpc_server.get_stand_head_pitch_direction_position();
-    #endif
-                } else {
-                }
+#ifdef LITE_WHOLE
+                q_head_cmd(0) = grpc_server.get_stand_head_yaw_direction_position();
+                q_head_cmd(1) = grpc_server.get_stand_head_roll_direction_position();
+                q_head_cmd(2) = grpc_server.get_stand_head_pitch_direction_position();
+#endif
+            } else {
+            }
 #endif
             gait.gait_run(data);
-#ifdef  LITE_WHOLE
+#ifdef LITE_WHOLE
             q_head_act = qEst.block(15, 0, 3, 1);
+            // std::cout << "q_head_cmd: " << q_head_cmd.transpose() << std::endl;
             q_head_ctr = sonnie_head.JoyStickControl(q_head_cmd, q_head_act);
             qCmd.block(15, 0, 3, 1) = q_head_ctr;
 #endif
@@ -582,6 +578,9 @@ int main(int argc, char **argv) {
 #ifdef LITE_WHOLE
 
         // current position  dealing data
+        // std::cout << "current waist roll: " << qEst[14] << std::endl;
+        // std::cout << "current waist pitch: " << qEst[13] << std::endl;
+        // std::cout << "current waist yaw: " << qEst[12] << std::endl;
         cur_pos_left_1 = qEst[18];
         cur_pos_left_2 = qEst[19];
         cur_pos_left_3 = qEst[20];
@@ -596,7 +595,8 @@ int main(int argc, char **argv) {
         cur_pos_right_4 = qEst[28];
         cur_pos_right_5 = qEst[29];
         cur_pos_right_6 = qEst[30];
-        cur_pos_right_7 = qEst[31];f
+        cur_pos_right_7 = qEst[31];
+
         cur_vel_left_1 = qDotEst[18];
         cur_vel_left_2 = qDotEst[19];
         cur_vel_left_3 = qDotEst[20];
@@ -613,418 +613,183 @@ int main(int argc, char **argv) {
         cur_vel_right_6 = qDotEst[30];
         cur_vel_right_7 = qDotEst[31];
 
-
-
         // logical judgment
 
         if (zero_over == 0) {
             qCmd.block(18, 0, 7, 1) = left_arm.GotoZero(qEst.block(18, 0, 7, 1), zero_over);
             qCmd.block(25, 0, 7, 1) = right_arm.GotoZero(qEst.block(25, 0, 7, 1), zero_over);
         } else if (zero_over == 1) {
-
             if (arm_mode == 0) {
-                if (first_enter_0) {
-                    // 计算轨迹
-                    Ruckig<armNum> otg;
-                    InputParameter<armNum> input;
-                    OutputParameter<armNum> output;
-                    input.current_position = {cur_pos_left_1, cur_pos_left_2, cur_pos_left_3, cur_pos_left_4, cur_pos_left_5, cur_pos_left_6, cur_pos_left_7, 
-                                                cur_pos_right_1, cur_pos_right_2, cur_pos_right_3, cur_pos_right_4, cur_pos_right_5, cur_pos_right_6, cur_pos_right_7};
-
-                    input.current_velocity = {cur_vel_left_1, cur_vel_left_2, cur_vel_left_3, cur_vel_left_4, cur_vel_left_5, cur_vel_left_6, cur_vel_left_7,
-                                                cur_vel_right_1, cur_vel_right_2, cur_vel_right_3, cur_vel_right_4, cur_vel_right_5, cur_vel_right_6, cur_vel_right_7};
-
-                    input.current_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_position = {left_arm.file_vec_left[401][0], left_arm.file_vec_left[401][1], left_arm.file_vec_left[401][2], 
-                                                left_arm.file_vec_left[401][3], left_arm.file_vec_left[401][4], left_arm.file_vec_left[401][5], left_arm.file_vec_left[401][6],
-                                             right_arm.file_vec_right[401][0], right_arm.file_vec_right[401][1], right_arm.file_vec_right[401][2], 
-                                             right_arm.file_vec_right[401][3], right_arm.file_vec_right[401][4], right_arm.file_vec_right[401][5], right_arm.file_vec_right[401][6]};
-
-                    input.target_velocity = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.max_velocity = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                            1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_acceleration = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                            1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_jerk = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                            1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.min_velocity = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                            -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    input.min_acceleration = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                            -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    Result result_0 = otg.calculate(input, trajectory_0);
-                    trajectory_0.at_time(seq_num_0 * unit_time, new_position_0, new_velocity_0, new_accelebration_0);
-                    for (int i = 0; i < armNum; i++) {
-                            qCmd[18 + i] = new_position_0[i];
-                        }
-                    
-                    duration_0 = trajectory_0.get_duration();
-                    seq_num_0++;
-                    first_enter_0 = false;
-                    upper_action = true;
-                }
-                if (!first_enter_0 and seq_num_0 * unit_time < duration_0) {
-                    trajectory_0.at_time(seq_num_0 * unit_time, new_position_0, new_velocity_0, new_accelebration_0);
-                    for (int i = 0; i < armNum; i++) {
-                        qCmd[18 + i] = new_position_0[i];
-                        }
-                    
-                    seq_num_0++;
-                    upper_action = true;
-                }
-                if (!first_enter_0 and seq_num_0 * unit_time >= duration_0) {
-                    for (int i = 0; i < armNum; i++) 
-                    {
-                        qCmd[18 + i] = new_position_0[i];
-                    }
-                    arm_mode = 100;
-                    upper_action = true;
-                }
-                
-            } else if (arm_mode == 1) {
-                if (first_enter_1) {
-                    // 计算轨迹
-                    Ruckig<armNum> otg;
-                    InputParameter<armNum> input;
-                    OutputParameter<armNum> output;
-                    input.current_position = {cur_pos_left_1, cur_pos_left_2, cur_pos_left_3, cur_pos_left_4, cur_pos_left_5, cur_pos_left_6, cur_pos_left_7, 
-                                                cur_pos_right_1, cur_pos_right_2, cur_pos_right_3, cur_pos_right_4, cur_pos_right_5, cur_pos_right_6, cur_pos_right_7};
-                    input.current_velocity = {cur_vel_left_1, cur_vel_left_2, cur_vel_left_3, cur_vel_left_4, cur_vel_left_5, cur_vel_left_6, cur_vel_left_7,
-                                                cur_vel_right_1, cur_vel_right_2, cur_vel_right_3, cur_vel_right_4, cur_vel_right_5, cur_vel_right_6, cur_vel_right_7};
-                    input.current_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_position = {left_arm.file_vec_left_1[0][0], left_arm.file_vec_left_1[0][1], left_arm.file_vec_left_1[0][2], left_arm.file_vec_left_1[0][3],
-                                                left_arm.file_vec_left_1[0][4], left_arm.file_vec_left_1[0][5], left_arm.file_vec_left_1[0][6],
-                                             right_arm.file_vec_right_1[0][0], right_arm.file_vec_right_1[0][1], right_arm.file_vec_right_1[0][2], 
-                                             right_arm.file_vec_right_1[0][3], right_arm.file_vec_right_1[0][4], right_arm.file_vec_right_1[0][5], right_arm.file_vec_right_1[0][6]};
-                    input.target_velocity = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.max_velocity = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                            1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_acceleration = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                                1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_jerk = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                        1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.min_velocity = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                            -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    input.min_acceleration = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                                -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    Result result_1 = otg.calculate(input, trajectory_1);
-
-                    trajectory_1.at_time(seq_num_1 * unit_time, new_position_1, new_velocity_1, new_accelebration_1);
-                    for (int i = 0; i < armNum; i++) {
-                            qCmd[18 + i] = new_position_1[i];
-                    }
-
-                    duration_1 = trajectory_1.get_duration();
-                    seq_num_1++;
-                    first_enter_1 = false;
-                    upper_action = true;
-                }
-                if (!first_enter_1 and seq_num_1 * unit_time < duration_1) {
-                    trajectory_1.at_time(seq_num_1 * unit_time, new_position_1, new_velocity_1, new_accelebration_1);
-                    for (int i = 0; i < armNum; i++) {
-                        qCmd[18 + i] = new_position_1[i];
-                    }
-                    seq_num_1++;
-                    upper_action = true;
-                }
-                // 开始读文件
-                if ((!first_enter_1 and seq_num_1 * unit_time >= duration_1) or (duration_1 <= 0.0)) {
-                    if (row_execute_1 >= left_arm.file_vec_left_1.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_1, left_arm.file_vec_left_1);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_1, right_arm.file_vec_right_1);
-                        matain_1 += 1;
-                        if (matain_1 == 200)
-                        {
-                            arm_mode = 0;
-                            first_enter_0 = true;
-                            upper_action = true;
-                            matain_1 = 0;
-                        }
-                        
-                    }
-                    if (row_execute_1 < left_arm.file_vec_left_1.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_1, left_arm.file_vec_left_1);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_1, right_arm.file_vec_right_1);
-                        row_execute_1++;
-                        upper_action = true;
-                    }
-                }
-            } else if (arm_mode == 2) {
-                if (first_enter_2) {
+                std::cout << "@@@@@@@" << std::endl;
+                if (first_enter_motion[arm_mode]) {
                     // 计算轨迹
                     Ruckig<armNum> otg;
                     InputParameter<armNum> input;
                     OutputParameter<armNum> output;
                     input.current_position = {cur_pos_left_1, cur_pos_left_2, cur_pos_left_3, cur_pos_left_4, cur_pos_left_5, cur_pos_left_6, cur_pos_left_7,
-                                                cur_pos_right_1, cur_pos_right_2, cur_pos_right_3, cur_pos_right_4, cur_pos_right_5, cur_pos_right_6, cur_pos_right_7};
+                                              cur_pos_right_1, cur_pos_right_2, cur_pos_right_3, cur_pos_right_4, cur_pos_right_5, cur_pos_right_6, cur_pos_right_7};
 
                     input.current_velocity = {cur_vel_left_1, cur_vel_left_2, cur_vel_left_3, cur_vel_left_4, cur_vel_left_5, cur_vel_left_6, cur_vel_left_7,
-                                                cur_vel_right_1, cur_vel_right_2, cur_vel_right_3, cur_vel_right_4, cur_vel_right_5, cur_vel_right_6, cur_vel_right_7};
+                                              cur_vel_right_1, cur_vel_right_2, cur_vel_right_3, cur_vel_right_4, cur_vel_right_5, cur_vel_right_6, cur_vel_right_7};
 
-                    input.current_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+                    input.current_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+                    input.target_position = {left_arm.file_vec_left[401][0], left_arm.file_vec_left[401][1], left_arm.file_vec_left[401][2],
+                                             left_arm.file_vec_left[401][3], left_arm.file_vec_left[401][4], left_arm.file_vec_left[401][5], left_arm.file_vec_left[401][6],
+                                             right_arm.file_vec_right[401][0], right_arm.file_vec_right[401][1], right_arm.file_vec_right[401][2],
+                                             right_arm.file_vec_right[401][3], right_arm.file_vec_right[401][4], right_arm.file_vec_right[401][5], right_arm.file_vec_right[401][6]};
+
+                    input.target_velocity = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+                    input.target_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+                    input.max_velocity = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57,
+                                          1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
+
+                    input.max_acceleration = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57,
+                                              1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
+
+                    input.max_jerk = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57,
+                                      1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
+
+                    input.min_velocity = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57,
+                                          -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
+
+                    input.min_acceleration = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57,
+                                              -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
+
+                    // Result result = otg.calculate(input, trajectory_0);
+                    Result result = otg.calculate(input, modes[arm_mode].trajectory);
+                    modes[arm_mode].trajectory.at_time(seq_num_motion[arm_mode] * unit_time, modes[arm_mode].new_position, modes[arm_mode].new_velocity, modes[arm_mode].new_accelebration);
+                    for (int i = 0; i < armNum; i++) {
+                        qCmd[18 + i] = modes[arm_mode].new_position[i];
+                    }
+
+                    modes[arm_mode].duration = modes[arm_mode].trajectory.get_duration();
+                    std::cout << "规划路径0 总计用时： " << modes[arm_mode].duration << std::endl;
+                    seq_num_motion[arm_mode]++;
+                    first_enter_motion[arm_mode] = false;
+                    upper_action = true;
+                }
+                if (!first_enter_motion[arm_mode] and seq_num_motion[arm_mode] * unit_time < modes[arm_mode].duration) {
+                    modes[arm_mode].trajectory.at_time(seq_num_motion[arm_mode] * unit_time, modes[arm_mode].new_position, modes[arm_mode].new_velocity, modes[arm_mode].new_accelebration);
+                    for (int i = 0; i < armNum; i++) {
+                        std::cout << "路径0 时间： " << seq_num_motion[arm_mode] * unit_time << ", 位置： " << modes[arm_mode].new_position[i] << " 速度： " << modes[arm_mode].new_velocity[i] << " 加速度： " << modes[arm_mode].new_accelebration[i] << std::endl;
+                        qCmd[18 + i] = modes[arm_mode].new_position[i];
+                    }
+
+                    seq_num_motion[arm_mode]++;
+                    upper_action = true;
+                }
+                if (!first_enter_motion[arm_mode] and seq_num_motion[arm_mode] * unit_time >= modes[arm_mode].duration) {
+                    for (int i = 0; i < armNum; i++) {
+                        qCmd[18 + i] = modes[arm_mode].new_position[i];
+                    }
+                    arm_mode = 1000;
+                    upper_action = true;
+                }
+
+            }
+            
+            else if ( arm_mode <= 100 and arm_mode >= 1){
+                if (first_enter_motion[arm_mode]) {
+                    Ruckig<armNum> otg;
+                    InputParameter<armNum> input;
+                    OutputParameter<armNum> output;
+                    input.current_position = {cur_pos_left_1, cur_pos_left_2, cur_pos_left_3, cur_pos_left_4, cur_pos_left_5, cur_pos_left_6, cur_pos_left_7,
+                                                cur_pos_right_1, cur_pos_right_2, cur_pos_right_3, cur_pos_right_4, cur_pos_right_5, cur_pos_right_6, cur_pos_right_7};
+                    input.current_velocity = {cur_vel_left_1, cur_vel_left_2, cur_vel_left_3, cur_vel_left_4, cur_vel_left_5, cur_vel_left_6, cur_vel_left_7,
+                                                cur_vel_right_1, cur_vel_right_2, cur_vel_right_3, cur_vel_right_4, cur_vel_right_5, cur_vel_right_6, cur_vel_right_7};
+                    input.current_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-                    input.target_position = {left_arm.file_vec_left_2[0][0], left_arm.file_vec_left_2[0][1], left_arm.file_vec_left_2[0][2], left_arm.file_vec_left_2[0][3],
-                                                left_arm.file_vec_left_2[0][4], left_arm.file_vec_left_2[0][5], left_arm.file_vec_left_2[0][6],
-                                             right_arm.file_vec_right_2[0][0], right_arm.file_vec_right_2[0][1], right_arm.file_vec_right_2[0][2], right_arm.file_vec_right_2[0][3],
-                                             right_arm.file_vec_right_2[0][4], right_arm.file_vec_right_2[0][5], right_arm.file_vec_right_2[0][6]};
-
-                    input.target_velocity = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+                    input.target_position = {left_arm.motion_set_left[arm_mode-1][0][0], left_arm.motion_set_left[arm_mode-1][0][1], left_arm.motion_set_left[arm_mode-1][0][2], left_arm.motion_set_left[arm_mode-1][0][3],
+                                                left_arm.motion_set_left[arm_mode-1][0][4], left_arm.motion_set_left[arm_mode-1][0][5], left_arm.motion_set_left[arm_mode-1][0][6],
+                                                right_arm.motion_set_right[arm_mode-1][0][0], right_arm.motion_set_right[arm_mode-1][0][1], right_arm.motion_set_right[arm_mode-1][0][2],
+                                                right_arm.motion_set_right[arm_mode-1][0][3], right_arm.motion_set_right[arm_mode-1][0][4], right_arm.motion_set_right[arm_mode-1][0][5], right_arm.motion_set_right[arm_mode-1][0][6]};
+                    input.target_velocity = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-                    input.target_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+                    input.target_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-                    input.max_velocity = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
+                    input.max_velocity = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57,
                                             1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
 
-                    input.max_acceleration = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                               1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
+                    input.max_acceleration = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57,
+                                                1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
 
-                    input.max_jerk = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
+                    input.max_jerk = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57,
                                         1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
 
                     input.min_velocity = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57,
-                                             -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
+                                            -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
 
-                    input.min_acceleration = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
+                    input.min_acceleration = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57,
                                                 -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
 
-                    Result result_2 = otg.calculate(input, trajectory_2);
-                    trajectory_2.at_time(seq_num_2 * unit_time, new_position_2, new_velocity_2, new_accelebration_2);
+                    Result result = otg.calculate(input, modes[arm_mode].trajectory);
+
+                    modes[arm_mode].trajectory.at_time(seq_num_motion[arm_mode] * unit_time, modes[arm_mode].new_position, modes[arm_mode].new_velocity, modes[arm_mode].new_accelebration);
                     for (int i = 0; i < armNum; i++) {
-                        qCmd[18 + i] = new_position_2[i];
+                        qCmd[18 + i] = modes[arm_mode].new_position[i];
+                        std::cout << "第 " << i << " 个 关节的位置为： " << modes[arm_mode].new_position[i] << std::endl;
                     }
-                    duration_2 = trajectory_2.get_duration();
-                    seq_num_2++;
-                    first_enter_2 = false;
+
+                    modes[arm_mode].duration = modes[arm_mode].trajectory.get_duration();
+                    std::cout << "动作   " << arm_mode <<   "  规划用时： " << modes[arm_mode].duration << std::endl;
+                    seq_num_motion[arm_mode]++;
+                    first_enter_motion[arm_mode] = false;
                     upper_action = true;
                 }
-                if (!first_enter_2 and seq_num_2 * unit_time < duration_2) {
-                    trajectory_2.at_time(seq_num_2 * unit_time, new_position_2, new_velocity_2, new_accelebration_2);
+                if (!first_enter_motion[arm_mode] and seq_num_motion[arm_mode] * unit_time < modes[arm_mode].duration) {
+                    std::cout << "未已进入  " << first_enter_motion[arm_mode] << std::endl;
+                    modes[arm_mode].trajectory.at_time(seq_num_motion[arm_mode] * unit_time, modes[arm_mode].new_position, modes[arm_mode].new_velocity, modes[arm_mode].new_accelebration);
                     for (int i = 0; i < armNum; i++) {
-                        qCmd[18 + i] = new_position_2[i];
+                        qCmd[18 + i] = modes[arm_mode].new_position[i];
                     }
-                    seq_num_2++;
+                    seq_num_motion[arm_mode]++;
+                    std::cout <<  arm_mode <<   " 路径已执行到规划的点个数： " << seq_num_motion[arm_mode] << std::endl;
                     upper_action = true;
                 }
-                // 开始读文件
-                if (!first_enter_2 and seq_num_2 * unit_time >= duration_2) {
-                    if (row_execute_2 >= left_arm.file_vec_left_2.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_2, left_arm.file_vec_left_2);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_2, right_arm.file_vec_right_2);
-                        matain_2 += 1;
-                        if (matain_2 == 200)
-                        {
-                            arm_mode = 0;
-                            first_enter_0 = true;
-                            upper_action = true;
-                            matain_2 = 0;
-                        }
-                        
-                    }
-                    if (row_execute_2 < left_arm.file_vec_left_2.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_2, left_arm.file_vec_left_2);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_2, right_arm.file_vec_right_2);
-                        row_execute_2++;
+                if ((!first_enter_motion[arm_mode] and seq_num_motion[arm_mode] * unit_time >= modes[arm_mode].duration) or (modes[arm_mode].duration <= 0.0)) {
+                    std::cout <<  arm_mode << "  进入执行文件流程  " << std::endl;
+                    if (row_execute_motion[arm_mode-1] < left_arm.motion_set_left[arm_mode-1].size() - 1) {
+                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_motion[arm_mode-1], left_arm.motion_set_left[arm_mode-1]);
+                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_motion[arm_mode-1], right_arm.motion_set_right[arm_mode-1]);
+                        row_execute_motion[arm_mode-1]++;
+                        std::cout << "当前 row_execute  "  << arm_mode << "    行数为： " << row_execute_motion[arm_mode-1] << std::endl;
                         upper_action = true;
                     }
-                }
-            }
-
-            else if (arm_mode == 3) {
-                if (first_enter_3) {
-                    // 计算轨迹
-                    Ruckig<armNum> otg;
-                    InputParameter<armNum> input;
-                    OutputParameter<armNum> output;
-                    input.current_position = {cur_pos_left_1, cur_pos_left_2, cur_pos_left_3, cur_pos_left_4, cur_pos_left_5, cur_pos_left_6, cur_pos_left_7,
-                                                    cur_pos_right_1, cur_pos_right_2, cur_pos_right_3, cur_pos_right_4, cur_pos_right_5, cur_pos_right_6, cur_pos_right_7};
-
-                    input.current_velocity = {cur_vel_left_1, cur_vel_left_2, cur_vel_left_3, cur_vel_left_4, cur_vel_left_5, cur_vel_left_6, cur_vel_left_7,
-                                                    cur_vel_right_1, cur_vel_right_2, cur_vel_right_3, cur_vel_right_4, cur_vel_right_5, cur_vel_right_6, cur_vel_right_7};
-
-                    input.current_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_position = {left_arm.file_vec_left_3[0][0], left_arm.file_vec_left_3[0][1], left_arm.file_vec_left_3[0][2], left_arm.file_vec_left_3[0][3],
-                                                left_arm.file_vec_left_3[0][4], left_arm.file_vec_left_3[0][5], left_arm.file_vec_left_3[0][6],
-                                             right_arm.file_vec_right_3[0][0], right_arm.file_vec_right_3[0][1], right_arm.file_vec_right_3[0][2], right_arm.file_vec_right_3[0][3],
-                                                right_arm.file_vec_right_3[0][4], right_arm.file_vec_right_3[0][5], right_arm.file_vec_right_3[0][6]};
-                    input.target_velocity = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.max_velocity = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                            1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_acceleration = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                                1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_jerk = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                            1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.min_velocity = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                            -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    input.min_acceleration = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                            -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    Result result_3 = otg.calculate(input, trajectory_3);
-                    trajectory_3.at_time(seq_num_3 * unit_time, new_position_3, new_velocity_3, new_accelebration_3);
-                    for (int i = 0; i < armNum; i++) {
-                            qCmd[18 + i] = new_position_3[i];
-                    }
-                    duration_3 = trajectory_3.get_duration();
-                    seq_num_3++;
-                    first_enter_3 = false;
-                    upper_action = true;
-                }
-                if (!first_enter_3 and seq_num_3 * unit_time < duration_3) {
-                    trajectory_3.at_time(seq_num_3 * unit_time, new_position_3, new_velocity_3, new_accelebration_3);
-                    for (int i = 0; i < armNum; i++) {
-                        qCmd[18 + i] = new_position_3[i];
-                    }
-                    seq_num_3++;
-                    upper_action = true;
-                }
-                // 开始读文件
-                if (!first_enter_3 and seq_num_3 * unit_time >= duration_3) {
-                    if (row_execute_3 >= left_arm.file_vec_left_3.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_3, left_arm.file_vec_left_3);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_3, right_arm.file_vec_right_3);
-                        matain_3 += 1;
-                        if (matain_3 == 200)
-                        {
-                            arm_mode = 0;
-                            first_enter_0 = true;
+                    if (row_execute_motion[arm_mode-1] >= left_arm.motion_set_left[arm_mode-1].size() - 1) {
+                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_motion[arm_mode-1], left_arm.motion_set_left[arm_mode-1]);
+                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_motion[arm_mode-1], right_arm.motion_set_right[arm_mode-1]);
+                        matain_motion[arm_mode-1] += 1;
+                        if (matain_motion[arm_mode-1] == 200) {
                             upper_action = true;
-                            matain_3 = 0;
+                            matain_motion[arm_mode-1] = 0;
+                            arm_mode = 0;
+                            for (int i = 0; i < 101; i++)
+                            {
+                                first_enter_motion[i] = false;
+                            }
+                            first_enter_motion[arm_mode] = true;
                         }
                     }
-                    if (row_execute_3 < left_arm.file_vec_left_3.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_3, left_arm.file_vec_left_3);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_3, right_arm.file_vec_right_3);
-                        row_execute_3++;
-                        upper_action = true;
-                    }
                 }
-            }
-
-            else if (arm_mode == 5) {
-                if (first_enter_5) {
-                    // 计算轨迹
-                    Ruckig<armNum> otg;
-                    InputParameter<armNum> input;
-                    OutputParameter<armNum> output;
-                    input.current_position = {cur_pos_left_1, cur_pos_left_2, cur_pos_left_3, cur_pos_left_4, cur_pos_left_5, cur_pos_left_6, cur_pos_left_7,
-                                                cur_pos_right_1, cur_pos_right_2, cur_pos_right_3, cur_pos_right_4, cur_pos_right_5, cur_pos_right_6, cur_pos_right_7};
-
-                    input.current_velocity = {cur_vel_left_1, cur_vel_left_2, cur_vel_left_3, cur_vel_left_4, cur_vel_left_5, cur_vel_left_6, cur_vel_left_7, 
-                                                cur_vel_right_1, cur_vel_right_2, cur_vel_right_3, cur_vel_right_4, cur_vel_right_5, cur_vel_right_6, cur_vel_right_7};
-
-                    input.current_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_position = {left_arm.file_vec_left_5[0][0], left_arm.file_vec_left_5[0][1], left_arm.file_vec_left_5[0][2], left_arm.file_vec_left_5[0][3],
-                                                    left_arm.file_vec_left_5[0][4], left_arm.file_vec_left_5[0][5], left_arm.file_vec_left_5[0][6],
-                                             right_arm.file_vec_right_5[0][0], right_arm.file_vec_right_5[0][1], right_arm.file_vec_right_5[0][2], right_arm.file_vec_right_5[0][3],
-                                                        right_arm.file_vec_right_5[0][4], right_arm.file_vec_right_5[0][5], right_arm.file_vec_right_5[0][6]};
-
-                    input.target_velocity = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.target_acceleration = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                                                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-                    input.max_velocity = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                            1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_acceleration = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                                1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.max_jerk = {1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 
-                                        1.57, 1.57, 1.57, 1.57, 1.57, 1.57, 1.57};
-
-                    input.min_velocity = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                            -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    input.min_acceleration = {-1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, 
-                                                -1.57, -1.57, -1.57, -1.57, -1.57, -1.57, -1.57};
-
-                    Result result_5 = otg.calculate(input, trajectory_5);
-                    trajectory_5.at_time(seq_num_5 * unit_time, new_position_5, new_velocity_5, new_accelebration_5);
-                    for (int i = 0; i < armNum; i++) {
-                            qCmd[18 + i] = new_position_5[i];
-                    }
-                    duration_5 = trajectory_5.get_duration();
-                    seq_num_5++;
-                    first_enter_5 = false;
-                    upper_action = true;
-                }
-                if (!first_enter_5 and seq_num_5 * unit_time < duration_5) {
-                    trajectory_5.at_time(seq_num_5 * unit_time, new_position_5, new_velocity_5, new_accelebration_5);
-                    for (int i = 0; i < 8; i++) {
-                        qCmd[18 + i] = new_position_5[i];
-                    }
-                    seq_num_5++;
-                    upper_action = true;
-                }
-                // 开始读文件
-                if (!first_enter_5 and seq_num_5 * unit_time >= duration_5) {
-                    if (row_execute_5 >= left_arm.file_vec_left_5.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_5, left_arm.file_vec_left_5);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_5, right_arm.file_vec_right_5);
-                        matain_5 += 1;
-                        if (matain_5 == 200)
-                        {
-                            arm_mode = 0;
-                            first_enter_0 = true;
-                            upper_action = true;
-                            matain_5 = 0;
-                        }
-                    }
-                    if (row_execute_5 < left_arm.file_vec_left_5.size() - 1) {
-                        qCmd.block(18, 0, 7, 1) = left_arm.Dance(row_execute_5, left_arm.file_vec_left_5);
-                        qCmd.block(25, 0, 7, 1) = right_arm.Dance(row_execute_5, right_arm.file_vec_right_5);
-                        row_execute_5++;
-                        upper_action = true;
-                    }
-                }
-            }
-
-            else if(arm_mode == 100) {
+            } 
+            else if (arm_mode == 1000) {
                 qCmd.block(18, 0, 7, 1) = left_arm.Swing(qEst.block(18, 0, 7, 1), gait.getleftamp(), gait.getleftphase());
                 qCmd.block(25, 0, 7, 1) = right_arm.Swing(qEst.block(25, 0, 7, 1), gait.getrightamp(), gait.getrightphase());
                 upper_action = false;
                 all_init = true;
             }
+
         }
+        
         data->q_hand_a = qCmd.block(18, 0, armNum, 1);
 #endif
 
@@ -1052,30 +817,30 @@ int main(int argc, char **argv) {
         // jointP << 1314.0, 1314.0, 502.2, 297.6, 188.0, 52.64, 1314.0, 1314.0, 502.2, 297.6, 188.0, 52.64, 1314.0, 1314.0, 1314.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0;
         // jointD << 26.28, 26.28, 16.74, 14.88, 3.76, 1.053, 26.28, 26.28, 16.74, 14.88, 3.76, 1.053, 26.28, 26.28, 26.28, 1.88, 1.88, 1.88, 1.88, 1.88, 1.88, 1.88, 1.88;
 
-        // jointP << 1000.0, 1000.0, 502.2, 297.6, 4.0, 1.0, 
-        //         1000.0, 1000.0, 502.2, 297.6, 4.0, 1.0, 
-        //         1000.0, 1000.0, 1000.0, 
-        //         100.0, 100.0, 100.0, 
-        //         100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 
+        // jointP << 1000.0, 1000.0, 502.2, 297.6, 4.0, 1.0,
+        //         1000.0, 1000.0, 502.2, 297.6, 4.0, 1.0,
+        //         1000.0, 1000.0, 1000.0,
+        //         100.0, 100.0, 100.0,
+        //         100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
         //         100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0;
-        // jointD << 10.0, 10.0, 10.0, 10.0, 0.1, 0.025, 
-        //         10.0, 10.0, 10.0, 10.0, 0.1, 0.025, 
-        //         10.0, 10.0, 10.0, 
-        //         10, 10, 10, 
-        //         10, 10, 10, 10, 10, 10, 10, 
+        // jointD << 10.0, 10.0, 10.0, 10.0, 0.1, 0.025,
+        //         10.0, 10.0, 10.0, 10.0, 0.1, 0.025,
+        //         10.0, 10.0, 10.0,
+        //         10, 10, 10,
+        //         10, 10, 10, 10, 10, 10, 10,
         //         10, 10, 10, 10, 10, 10, 10;
-        jointP << 1000.0, 1000.0, 502.2, 297.6, 10.0, 1.0, 
-                1000.0, 1000.0, 502.2, 297.6, 10.0, 1.0, 
-                1000.0, 1000.0, 1000.0, 
-                100.0, 100.0, 100.0, 
-                100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 
-                100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0;
-        jointD << 10.0, 10.0, 10.0, 10.0, 0.1, 0.025, 
-                10.0, 10.0, 10.0, 10.0, 0.1, 0.025, 
-                10.0, 10.0, 10.0, 
-                10, 10, 10, 
-                10, 10, 10, 10, 10, 10, 10, 
-                10, 10, 10, 10, 10, 10, 10;
+        jointP << 1000.0, 1000.0, 502.2, 297.6, 10.0, 1.0,
+            1000.0, 1000.0, 502.2, 297.6, 10.0, 1.0,
+            1000.0, 1000.0, 1000.0,
+            100.0, 100.0, 100.0,
+            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0,
+            100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0;
+        jointD << 10.0, 10.0, 10.0, 10.0, 0.1, 0.025,
+            10.0, 10.0, 10.0, 10.0, 0.1, 0.025,
+            10.0, 10.0, 10.0,
+            10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10;
 
 #ifdef WEBOTS
         for (int i = 0; i < motorNum; i++) {
@@ -1151,8 +916,8 @@ int main(int argc, char **argv) {
         dataL(1 + 10 * motorNum + 45) = gait.getleftphase();
         dataL(1 + 10 * motorNum + 46) = gait.getrightphase();
 #endif
-        dataLog(dataL, foutData); 1);
-            // qCmd.block(21, 0, 1, 1) = -qCmd.block(21, 0, 1, 1);
+        dataLog(dataL, foutData);
+        // qCmd.block(21, 0, 1, 1) = -qCmd.block(21, 0, 1, 1);
         sleep2Time = start_time + period;
         sleep2Time_spec = sleep2Time.toTimeSpec();
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &(sleep2Time_spec), NULL);
