@@ -38,22 +38,22 @@ Background {
     0.3 0.5 0.9
   ]
   backUrl [
-    "../background/129072673_back.jpg"
+    "./background/129072673_back.jpg"
   ]
   bottomUrl [
-    "../background/129072673_bottom.jpg"
+    "./background/129072673_bottom.jpg"
   ]
   frontUrl [
-    "../background/129072673_front.jpg"
+    "./background/129072673_front.jpg"
   ]
   leftUrl [
-    "../background/129072673_left.jpg"
+    "./background/129072673_left.jpg"
   ]
   rightUrl [
-    "../background/129072673_right.jpg"
+    "./background/129072673_right.jpg"
   ]
   topUrl [
-    "../background/129072673_top.jpg"
+    "./background/129072673_top.jpg"
   ]
 }
 DirectionalLight {
