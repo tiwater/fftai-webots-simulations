@@ -1,4 +1,4 @@
-FROM ccr.ccs.tencentyun.com/fftai/fftai-webots:1.3
+FROM ccr.ccs.tencentyun.com/fftai/fftai-webots:1.5
 ARG PROJECT_PATH
 RUN mkdir -p $PROJECT_PATH
 COPY . $PROJECT_PATH
